@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ku" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>kamalblbas TV - Web App</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.10.0/video-js.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #11141a;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        h1 {
+            color: #00d2ff;
+            margin-bottom: 20px;
+            font-size: 28px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .video-holder {
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.7);
+            border: 2px solid #222b36;
+            margin-bottom: 25px;
+        }
+        .playlist-box {
+            background: #1b222c;
+            border-radius: 10px;
+            padding: 15px;
+            border: 1px solid #2c3848;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .channel-btn {
+            background: #242f3e;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            margin: 5px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s ease;
+            display: inline-block;
+        }
+        .channel-btn:hover, .channel-btn.active {
+            background: #00d2ff;
+            color: #11141a;
+            font-weight: bold;
+            transform: scale(1.05);
+        }
+        .loading {
+            color: #aaa;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>📺 سەرپەرشتیاری چەناڵەکانی kamalblbas TV</h1>
+        
+        <div class="video-holder">
+            <video id="tv-player" class="video-js vjs-default-skin vjs-16-9 vjs-big-play-centered" controls preload="auto">
+            </video>
+        </div>
+
+        <div class="playlist-box">
+            <h3>🗂️ لیستی کەنالەکان (باردەکرێت لە M3U)...</h3>
+            <div id="channels-list" class="loading">تکایە چاوەڕوان بە، چەناڵەکان لە گیت‌هەبەوە دەهێنرێن...</div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/8.10.0/video.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dashjs/4.7.4/dash.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/videojs-contrib-dash/5.1.1/videojs-contrib-dash.min.js"></script>
+
+    <script>
+        // لێرەدا بەستەری فایلی M3U سەر گیت‌هەبەکەت دادەنێین
+        const M3U_URL = "https://raw.githubusercontent.com/serverblbas-svg/kamalblbas-TV-2027/main/working_channels.m3u";
+
+        const player = videojs('tv-player', { fluid: true, autoplay: false, liveui: true });
+        const listContainer = document.getElementById('channels-list');
+
+        // نەخشەیەک بۆ خوێندنەوە و جیاکردنەوەی فایلی M3U
+        function parseM3U(data) {
+            const lines = data.split('\n');
+            const channels = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+                if (line.startsWith('#EXTINF:')) {
+                    let name = line.split(',').pop() || "Unknown";
+                    
+                    // گەڕان بەدوای دێڕی داهاتوو کە بە http دەست پێ دەکات (لینکەکە)
+                    let url = "";
+                    for (let j = i + 1; j < lines.length; j++) {
+                        let nextLine = lines[j].trim();
+                        if (nextLine.startsWith('http')) {
+                            url = nextLine;
+                            break;
+                        }
+                        if (nextLine.startsWith('#EXTINF:')) break; // ئەگەر گەیشتە کەنالێکی تر و لینک نەبوو
+                    }
+                    
+                    if (url) {
+                        channels.append({ name: name, url: url });
+                    }
+                }
+            }
+            return channels;
+        }
+
+        // هێنانی داتا لە ڕێگەی ئینتەرنێتەوە (Fetch)
+        fetch(M3U_URL)
+            .then(response => response.text())
+            .then(data => {
+                const channels = parseM3U(data);
+                listContainer.innerHTML = ""; // سڕینەوەی نامەی لۆدین
+                listContainer.classList.remove('loading');
+
+                if(channels.length === 0) {
+                    listContainer.innerText = "هیچ چەناڵێکی ساغ لە فایلەکەدا نەدۆزرایەوە.";
+                    return;
+                }
+
+                channels.forEach((ch, index) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'channel-btn';
+                    btn.innerText = ch.name;
+                    btn.onclick = function() {
+                        document.querySelectorAll('.channel-btn').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        
+                        let type = 'application/x-mpegURL'; // باو بۆ M3U8 یان TS
+                        if(ch.url.includes('.mpd') || ch.url.includes('manifest')) {
+                            type = 'application/dash+xml'; // باو بۆ MPD
+                        }
+                        
+                        player.src({ src: ch.url, type: type });
+                        player.play();
+                    };
+                    listContainer.appendChild(btn);
+                });
+
+                // لێدانی چەناڵی یەکەم بە شێوەی ئۆتۆماتیکی
+                if(channels.length > 0) {
+                    document.getElementsByClassName('channel-btn')[0].click();
+                }
+            })
+            .catch(err => {
+                listContainer.innerText = "خەتا لە هێنانی فایلەکە: " + err;
+            });
+    </script>
+</body>
+</html>
