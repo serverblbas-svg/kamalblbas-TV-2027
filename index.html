@@ -332,6 +332,9 @@
         .sidebar-header {
             padding: 15px 20px;
             border-bottom: 1px solid var(--border);
+        }
+
+        .sidebar-title-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -354,6 +357,26 @@
             font-size: 0.8rem;
             color: var(--text-muted);
             font-weight: 600;
+        }
+
+        .channel-search-box {
+            margin-top: 10px;
+        }
+
+        .channel-search-box input {
+            width: 100%;
+            padding: 8px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: 'Cairo', sans-serif;
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .channel-search-box input::placeholder {
+            color: var(--text-muted);
         }
 
         .channel-list {
@@ -454,6 +477,17 @@
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+
+        .ch-logo .auto-text {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            color: white;
+            font-weight: 800;
+            font-size: 0.8rem;
         }
 
         .ch-name {
@@ -804,12 +838,16 @@
             }
             .channel-sidebar {
                 width: 100%;
-                height: 40%;
+                height: 35%;
+                min-height: 250px;
                 border-left: none;
                 border-bottom: 1px solid var(--border);
             }
             .groups-sidebar {
                 width: 100%;
+            }
+            .groups-sidebar.open {
+                width: 85%;
             }
             .epg-area {
                 height: 200px;
@@ -881,11 +919,16 @@
         <!-- Channel List (Middle) -->
         <div class="channel-sidebar">
             <div class="sidebar-header">
-                <div class="sidebar-title">
-                    <i class="fas fa-list"></i>
-                    <span id="listTitle">هەموو کەناڵەکان</span>
+                <div class="sidebar-title-row">
+                    <div class="sidebar-title">
+                        <i class="fas fa-list"></i>
+                        <span id="listTitle">هەموو کەناڵەکان</span>
+                    </div>
+                    <div class="channel-count" id="channelCount">0 کەناڵ</div>
                 </div>
-                <div class="channel-count" id="channelCount">0 کەناڵ</div>
+                <div class="channel-search-box">
+                    <input type="text" id="channelSearch" placeholder="گەڕان بۆ کەناڵ..." oninput="filterChannels(this.value)">
+                </div>
             </div>
             <div class="channel-list" id="channelList">
                 <div class="loading-screen">
@@ -901,8 +944,8 @@
             <div class="player-area">
                 <video id="videoPlayer"></video>
                 <div class="player-placeholder" id="playerPlaceholder">
-                    <i class="fas fa-tv"></i>
-                    <div class="player-placeholder-text">تکایە کەناڵێک هەڵبژێرە</div>
+                    <i class="fas fa-tv" id="placeholderIcon"></i>
+                    <div class="player-placeholder-text" id="placeholderText">تکایە کەناڵێک هەڵبژێرە</div>
                     <div class="loading-dots" id="loadingDots" style="display:none;">
                         <div class="dot"></div>
                         <div class="dot"></div>
@@ -946,10 +989,9 @@
     </div>
 
     <script>
-        const M3U_URL = 'https://xtream-ie.net/get.php?username=iptv2026&password=iptv2026&type=m3u_plus';
-        const EPG_URL = 'https://xtream-ie.net/xmltv.php?username=iptv2026&password=iptv2026'; // لێرەدا کۆتیشنەکە چاککراوەتەوە
-    
-
+        // CORS Proxy بۆ دابەزاندنی داتا
+        const M3U_URL = 'https://corsproxy.io/?' + encodeURIComponent('https://xtream-ie.net/get.php?username=iptv2026&password=iptv2026&type=m3u_plus';
+        const EPG_URL = 'https://corsproxy.io/?' + encodeURIComponent('https://xtream-ie.net/xmltv.php?username=iptv2026&password=iptv2026'; // لێرەدا کۆتیشنەکە چاککراوەتەوە
         let allChannels = [];
         let groups = {};
         let currentChannel = null;
@@ -957,12 +999,19 @@
         let hls = null;
         let isPlaying = false;
         let currentView = 'live';
-        let favorites = JSON.parse(localStorage.getItem('kamal_favorites') || '[]');
+        let favorites = [];
+        try {
+            favorites = JSON.parse(localStorage.getItem('kamal_favorites') || '[]');
+        } catch(e) {
+            favorites = [];
+            localStorage.removeItem('kamal_favorites');
+        }
         const video = document.getElementById('videoPlayer');
 
         document.addEventListener('DOMContentLoaded', () => {
             loadChannels();
             setupVideoEvents();
+            setupKeyboardShortcuts();
         });
 
         async function loadChannels() {
@@ -980,6 +1029,7 @@
                     <div class="loading-screen">
                         <i class="fas fa-exclamation-triangle"></i>
                         <div>هەڵە لە بارکردنی کەناڵەکان ڕوویدا</div>
+                        <div style="font-size:0.85rem;margin-top:10px;">${error.message}</div>
                     </div>
                 `;
             }
@@ -1067,7 +1117,7 @@
                 if(count === 0) return;
                 const row = document.createElement('div');
                 row.className = 'group-row' + (currentGroup === groupName ? ' active' : '');
-                
+
                 const langMatch = groupName.match(/^([A-Z]{2})\s*/);
                 const lang = langMatch ? langMatch[1] : '';
                 const nameWithoutLang = lang ? groupName.substring(lang.length).trim() : groupName;
@@ -1086,7 +1136,7 @@
         function selectGroup(groupName) {
             currentGroup = groupName;
             renderGroupsList();
-            
+
             let filtered = [];
             if (groupName === 'favorites') {
                 filtered = allChannels.filter(c => favorites.includes(c.url));
@@ -1098,7 +1148,7 @@
                 filtered = groups[groupName] || [];
                 document.getElementById('listTitle').textContent = groupName;
             }
-            
+
             document.getElementById('channelCount').textContent = filtered.length + ' کەناڵ';
             renderChannelList(filtered);
 
@@ -1120,10 +1170,10 @@
                 const isFav = favorites.includes(chan.url);
                 const row = document.createElement('div');
                 row.className = 'channel-row' + (currentChannel && currentChannel.url === chan.url ? ' active' : '');
-                
+
                 let logoContent = chan.logo ? `<img src="${chan.logo}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">` : '';
                 let styleBg = chan.logo ? '' : `style="background:${getChannelColor(chan.name)}"`;
-                
+
                 row.innerHTML = `
                     <div class="ch-number">${chan.num}</div>
                     <div class="ch-logo ${chan.logo ? '' : 'auto-logo'}" ${styleBg}>
@@ -1142,30 +1192,47 @@
 
         function playChannel(chan) {
             currentChannel = chan;
-            
+
+            // نیشاندانی بارکردن
+            document.getElementById('playerPlaceholder').style.display = 'flex';
+            document.getElementById('loadingDots').style.display = 'flex';
+            document.getElementById('placeholderText').textContent = 'کەناڵەکە بار دەکرێت...';
+            document.getElementById('placeholderIcon').style.display = 'none';
+
             // UI Upgrades
-            document.getElementById('playerPlaceholder').style.display = 'none';
             document.getElementById('epgChannelName').textContent = chan.name;
-            
+
             // Mark active row
             const rows = document.querySelectorAll('.channel-row');
             rows.forEach((r, idx) => {
                 r.classList.remove('active');
                 if(chan.num === parseInt(r.querySelector('.ch-number').textContent)) {
                     r.classList.add('active');
+                    r.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }
             });
 
             // Start Playback
             if (Hls.isSupported()) {
                 if (hls) hls.destroy();
-                hls = new Hls();
+                hls = new Hls({
+                    maxBufferLength: 30,
+                    maxMaxBufferLength: 60
+                });
                 hls.loadSource(chan.url);
                 hls.attachMedia(video);
+
                 hls.on(Hls.Events.MANIFEST_PARSED, () => {
                     video.play();
                     isPlaying = true;
                     updatePlayIcon();
+                    document.getElementById('playerPlaceholder').style.display = 'none';
+                });
+
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    if (data.fatal) {
+                        showPlayerError('کەناڵەکە بەردەست نییە');
+                    }
                 });
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                 video.src = chan.url;
@@ -1173,10 +1240,23 @@
                     video.play();
                     isPlaying = true;
                     updatePlayIcon();
+                    document.getElementById('playerPlaceholder').style.display = 'none';
+                });
+                video.addEventListener('error', () => {
+                    showPlayerError('کەناڵەکە بەردەست نییە');
                 });
             }
-            
+
             renderFakeEPG(chan.name);
+        }
+
+        function showPlayerError(msg) {
+            document.getElementById('placeholderText').textContent = msg;
+            document.getElementById('loadingDots').style.display = 'none';
+            document.getElementById('placeholderIcon').style.display = 'block';
+            document.getElementById('placeholderIcon').className = 'fas fa-exclamation-triangle';
+            document.getElementById('placeholderIcon').style.color = 'var(--accent)';
+            document.getElementById('playerPlaceholder').style.display = 'flex';
         }
 
         function togglePlay() {
@@ -1213,8 +1293,9 @@
         }
 
         function toggleFullscreen() {
+            const playerArea = document.querySelector('.player-area');
             if (!document.fullscreenElement) {
-                video.requestFullscreen().catch(err => console.log(err));
+                playerArea.requestFullscreen().catch(err => console.log(err));
             } else {
                 document.exitFullscreen();
             }
@@ -1229,8 +1310,7 @@
                 favorites.push(url);
             }
             localStorage.setItem('kamal_favorites', JSON.stringify(favorites));
-            
-            // Re-render components
+
             renderGroupsList();
             if(currentGroup === 'favorites') {
                 selectGroup('favorites');
@@ -1245,11 +1325,16 @@
             const rows = document.querySelectorAll('#groupsList .group-row');
             rows.forEach(r => {
                 const name = r.querySelector('.group-name').textContent.toLowerCase();
-                if(name.includes(lower)) {
-                    r.style.display = 'flex';
-                } else {
-                    r.style.display = 'none';
-                }
+                r.style.display = name.includes(lower) ? 'flex' : 'none';
+            });
+        }
+
+        function filterChannels(val) {
+            const lower = val.toLowerCase();
+            const rows = document.querySelectorAll('.channel-row');
+            rows.forEach(r => {
+                const name = r.querySelector('.ch-name').textContent.toLowerCase();
+                r.style.display = name.includes(lower) ? 'flex' : 'none';
             });
         }
 
@@ -1263,7 +1348,6 @@
             currentView = view;
             document.getElementById('liveBtn').classList.toggle('active', view === 'live');
             document.getElementById('epgBtn').classList.toggle('active', view === 'epg');
-            // Can extend logic for full EPG guide interface if needed
         }
 
         function renderFakeEPG(channelName) {
@@ -1291,6 +1375,25 @@
             video.addEventListener('play', () => { isPlaying = true; updatePlayIcon(); });
             video.addEventListener('pause', () => { isPlaying = false; updatePlayIcon(); });
         }
+
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+                if (e.code === 'KeyM') toggleMute();
+                if (e.code === 'KeyF') toggleFullscreen();
+                if (e.code === 'ArrowUp') { 
+                    e.preventDefault(); 
+                    video.volume = Math.min(1, video.volume + 0.1); 
+                    setVolume(video.volume * 100);
+                }
+                if (e.code === 'ArrowDown') { 
+                    e.preventDefault(); 
+                    video.volume = Math.max(0, video.volume - 0.1); 
+                    setVolume(video.volume * 100);
+                }
+            });
+        }
+
         function toggleSettings() { alert('ڕێکخستنەکان بەم زووانە بەردەست دەبن!'); }
     </script>
 </body>
