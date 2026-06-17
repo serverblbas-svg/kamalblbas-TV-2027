@@ -785,6 +785,109 @@
             opacity: 0.3;
         }
 
+        /* ========== SETTINGS MODAL ========== */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 30px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 25px;
+        }
+
+        .modal-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .modal-close:hover {
+            color: var(--accent);
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .setting-label {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .setting-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .stream-format-btns {
+            display: flex;
+            gap: 8px;
+        }
+
+        .format-btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text-muted);
+            font-family: 'Cairo', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .format-btn:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+
+        .format-btn.active {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
         /* ========== LOADING ========== */
         .loading-screen {
             display: flex;
@@ -989,10 +1092,47 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="fas fa-cog" style="color:var(--accent)"></i>
+                    ڕێکخستنەکان
+                </div>
+                <button class="modal-close" onclick="toggleSettings()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">فۆرماتی سترێم</div>
+                    <div class="setting-desc">جۆری فایلی پەخشکردنی کەناڵەکان هەڵبژێرە</div>
+                </div>
+                <div class="stream-format-btns">
+                    <button class="format-btn" id="fmtM3U8" onclick="setStreamFormat('m3u8')">M3U8 (HLS)</button>
+                    <button class="format-btn" id="fmtTS" onclick="setStreamFormat('ts')">MPEG-TS</button>
+                    <button class="format-btn" id="fmtLiveTS" onclick="setStreamFormat('live_ts')">Live TS</button>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">دڵخوازەکان</div>
+                    <div class="setting-desc">سڕینەوەی هەموو دڵخوازەکان</div>
+                </div>
+                <button class="format-btn" onclick="clearFavorites()" style="background:var(--accent);color:white;">
+                    <i class="fas fa-trash"></i> سڕینەوە
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // لینکە نوێیەکان - نوێکرانەوە لەگەڵ iptv2026/iptv2026
-        const M3U_URL =('https://xtream-ie.net/get.php?username=iptv2026&password=iptv2026&type=m3u_plus');
-        const EPG_URL =('https://xtream-ie.net/xmltv.php?username=iptv2026&password=iptv2026');
+        // لینکە ڕاستەوخۆیەکان - بێ CORS Proxy
+        const M3U_URL = 'https://xtream-ie.net/get.php?username=serverblbas&password=serverblbas&type=m3u_plus';
+        const EPG_URL = 'https://xtream-ie.net/xmltv.php?username=serverblbas&password=serverblbas';
 
         let allChannels = [];
         let groups = {};
@@ -1001,6 +1141,8 @@
         let hls = null;
         let isPlaying = false;
         let currentView = 'live';
+        let streamFormat = localStorage.getItem('kamal_stream_format') || 'm3u8';
+
         let favorites = [];
         try {
             favorites = JSON.parse(localStorage.getItem('kamal_favorites') || '[]');
@@ -1008,13 +1150,70 @@
             favorites = [];
             localStorage.removeItem('kamal_favorites');
         }
+
         const video = document.getElementById('videoPlayer');
 
         document.addEventListener('DOMContentLoaded', () => {
             loadChannels();
             setupVideoEvents();
             setupKeyboardShortcuts();
+            updateFormatButtons();
         });
+
+        // ====== STREAM FORMAT FUNCTIONS ======
+        function setStreamFormat(format) {
+            streamFormat = format;
+            localStorage.setItem('kamal_stream_format', format);
+            updateFormatButtons();
+
+            // ئەگەر کەناڵێک لە کاتی پەخشدانە، دووبارە پەخش بکەوە
+            if (currentChannel) {
+                playChannel(currentChannel);
+            }
+        }
+
+        function updateFormatButtons() {
+            document.getElementById('fmtM3U8').classList.toggle('active', streamFormat === 'm3u8');
+            document.getElementById('fmtTS').classList.toggle('active', streamFormat === 'ts');
+            document.getElementById('fmtLiveTS').classList.toggle('active', streamFormat === 'live_ts');
+        }
+
+        function convertStreamUrl(originalUrl, format) {
+            // ئەگەر URL پێشتر .m3u8 یان .ts تێدایە، وەک خۆی بەکاربهێنە
+            if (originalUrl.includes('.m3u8') || originalUrl.includes('.ts')) {
+                if (format === 'm3u8') {
+                    return originalUrl.replace('.ts', '.m3u8');
+                } else if (format === 'ts') {
+                    return originalUrl.replace('.m3u8', '.ts');
+                }
+                return originalUrl;
+            }
+
+            // بۆ URLی Xtream Codes: /live/username/password/stream_id
+            try {
+                const url = new URL(originalUrl);
+                const parts = url.pathname.split('/').filter(p => p.length > 0);
+
+                if (parts.length < 3) return originalUrl;
+
+                const streamId = parts[parts.length - 1];
+                const password = parts[parts.length - 2];
+                const username = parts[parts.length - 3];
+                const folder = parts[parts.length - 4] || 'live';
+
+                if (format === 'm3u8') {
+                    url.pathname = `/${folder}/${username}/${password}/${streamId}.m3u8`;
+                } else if (format === 'ts') {
+                    url.pathname = `/${folder}/${username}/${password}/${streamId}.ts`;
+                } else if (format === 'live_ts') {
+                    url.pathname = `/${folder}/${username}/${password}/${streamId}`;
+                }
+
+                return url.toString();
+            } catch (e) {
+                return originalUrl;
+            }
+        }
 
         async function loadChannels() {
             try {
@@ -1065,6 +1264,7 @@
                     };
                 } else if (line.startsWith('http') && activeChan) {
                     activeChan.url = line;
+                    activeChan.originalUrl = line; // پاراستنی URLی ڕەسەن
                     groups[currentGroupName].push(activeChan);
                     allChannels.push(activeChan);
                     activeChan = null;
@@ -1198,7 +1398,7 @@
             // نیشاندانی بارکردن
             document.getElementById('playerPlaceholder').style.display = 'flex';
             document.getElementById('loadingDots').style.display = 'flex';
-            document.getElementById('placeholderText').textContent = 'کەناڵەکە بار دەکرێت...';
+            document.getElementById('placeholderText').textContent = 'کەناڵەکە بار دەکرێت... (' + streamFormat.toUpperCase() + ')';
             document.getElementById('placeholderIcon').style.display = 'none';
 
             // UI Upgrades
@@ -1214,14 +1414,19 @@
                 }
             });
 
+            // گۆڕینی URL بەپێی فۆرماتی هەڵبژێردراو
+            const streamUrl = convertStreamUrl(chan.originalUrl || chan.url, streamFormat);
+            console.log('Playing URL:', streamUrl, 'Format:', streamFormat);
+
             // Start Playback
-            if (Hls.isSupported()) {
+            if (streamFormat === 'm3u8' && Hls.isSupported()) {
                 if (hls) hls.destroy();
                 hls = new Hls({
                     maxBufferLength: 30,
-                    maxMaxBufferLength: 60
+                    maxMaxBufferLength: 60,
+                    enableWorker: true
                 });
-                hls.loadSource(chan.url);
+                hls.loadSource(streamUrl);
                 hls.attachMedia(video);
 
                 hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -1232,20 +1437,23 @@
                 });
 
                 hls.on(Hls.Events.ERROR, (event, data) => {
+                    console.error('HLS Error:', data);
                     if (data.fatal) {
-                        showPlayerError('کەناڵەکە بەردەست نییە');
+                        showPlayerError('کەناڵەکە بەردەست نییە (' + streamFormat + ')');
                     }
                 });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = chan.url;
+            } else {
+                // بۆ MPEG-TS و Live TS
+                video.src = streamUrl;
                 video.addEventListener('loadedmetadata', () => {
                     video.play();
                     isPlaying = true;
                     updatePlayIcon();
                     document.getElementById('playerPlaceholder').style.display = 'none';
                 });
-                video.addEventListener('error', () => {
-                    showPlayerError('کەناڵەکە بەردەست نییە');
+                video.addEventListener('error', (e) => {
+                    console.error('Video Error:', e);
+                    showPlayerError('کەناڵەکە بەردەست نییە (' + streamFormat + ')');
                 });
             }
 
@@ -1322,6 +1530,16 @@
             }
         }
 
+        function clearFavorites() {
+            favorites = [];
+            localStorage.removeItem('kamal_favorites');
+            renderGroupsList();
+            if(currentGroup === 'favorites') {
+                selectGroup(null);
+            }
+            alert('هەموو دڵخوازەکان سڕانەوە!');
+        }
+
         function filterGroups(val) {
             const lower = val.toLowerCase();
             const rows = document.querySelectorAll('#groupsList .group-row');
@@ -1396,7 +1614,10 @@
             });
         }
 
-        function toggleSettings() { alert('ڕێکخستنەکان بەم زووانە بەردەست دەبن!'); }
+        function toggleSettings() {
+            const modal = document.getElementById('settingsModal');
+            modal.classList.toggle('active');
+        }
     </script>
 </body>
 </html>
